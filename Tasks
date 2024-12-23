@@ -1,0 +1,306 @@
+##__________________________________________________________________________
+##Example: Printing the Value stored in a1 Register
+##The following example demonstrates a simple procedure print_value to print
+##the value stored in the a1 register. The function takes a single input argument
+##(which is the integer value to be printed) in the register a1.
+
+# .text
+# # Main function
+# main:
+# li a1, 1 # Load the value 1 into a1
+# jal print_value # Call the print_value procedure
+# li a1, 2 # Load the value 2 into a1
+# jal print_value # Call the print_value procedure
+# li a0, 10 # Exit syscall
+# ecall
+# # Procedure to print the value in a1
+# print_value:
+# li a0, 1 # Syscall for print integer
+# ecall
+# jr ra # Return to caller
+
+##_______________________END Example_____________________________
+
+##______________________ stack ___________________________________
+##One way to avoid this bug is to save the values of those non-preserved
+##registers that you will use after the function call on the stack before calling
+##the function, then restore the values in the non-preserved registers after the
+##function returns. For example:
+
+# addi t0, x0, 5 # t0 contains 5
+# addi a0, t0, 10 # a0 (argument to func) contains 15
+
+# # Prologue
+# addi sp, sp, -8 # decrement stack to create space for two more words(8 bytes)
+# sw t0, 0(sp) # store t0 value on the stack
+# sw a0, 4(sp) # store a0 value on the stack
+
+# # Function call
+# # Note that this function returns two values, one in a0, 
+# # and the other in the a1 register
+
+# jal ra, func # call a function
+# mv s0, a0 # save first return value, before restoring a0's old value to
+#           #avoid overwriting the return value
+# mv s1, a1 # save second return value, before moving on, in case a1 is used
+#           #in the future, to avoid potentially overwriting the return value
+          
+# # Epilogue
+# lw t0, 0(sp) # restore t0 value from the stack
+# lw a0, 4(sp) # restore a0 value from stack
+# addi sp, sp, 8 # increment stack
+
+# # After Epilogue caller can do its stuff
+# addi t0, t0, 0 # t0 contains 5 here because you saved it before the function call!
+# xori t1, a0, t0 # t0^a0 safely here          
+
+##_______________________________END______________________________________
+
+
+##________________________The callee perspective___________________________
+
+# # Prologue
+# addi sp, sp, -12 # decrement stack
+# sw ra, 0(sp) # store ra value on the stack
+# sw s0, 4(sp) # store s0 value on the stack
+# sw s1, 8(sp) # store s1 value on the stack
+# # do stuff in the function
+
+# # function stuff complete here
+# # Epilogue
+# lw ra, 0(sp) # restore ra value from the stack
+# lw s0, 4(sp) # restore s0 value from the stack
+
+# lw s1, 8(sp) # restore s1 value from the stack
+# addi sp, sp, 12 # increment stack
+
+# # finish up any loose ends
+# ret # return from function
+
+##_______________________________END______________________________________
+
+##___Example2: Converting from C to RISC-V with Calling Convention________
+
+## In this exercise, you will be guided through how to translate the below C
+## program into RISC-V. If you are looking for an additional challenge, you can
+## translate the code first before looking at the solution
+
+
+##__________________  int source[] = {3, 1, 4, 1, 5, 9, 0};
+##__________________  int dest[10];
+##__________________  int fun(int x) {
+##__________________  return -x * (x + 1);
+##__________________  }
+##__________________  int main() {
+##__________________  int k;
+##__________________  int sum = 0;
+##__________________  for (k = 0; source[k] != 0; k++) {
+##__________________  dest[k] = fun(source[k]);
+##__________________  sum += dest[k];
+##__________________  }
+##__________________  printf("sum: %d\n", sum);
+##__________________  }
+
+
+# .data
+# source: .word 3, 1, 4, 1, 5, 9, 0
+# dest: .word 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+
+# ## int fun(int x) {
+# ## return -x * (x + 1);
+# ## }
+# .text
+# fun:
+# addi t0, a0, 1 # t0 = x + 1
+# sub t1, x0, a0 # t1 = -x
+# mul a0, t0, t1 # a0 = (x + 1) * (-x)
+# jr ra # return
+
+# ##int main() {
+# ##int k;
+# ##int sum = 0;
+# main:
+# addi t0, x0, 0 # t0 = k = 0
+# ## although k can have any value at the start)
+# ## just making it zero at the start.
+# addi s0, x0, 0 # s0 = sum = 0
+
+# ##Next, let's load in the address of the two arrays
+# la s1, source
+# la s2, dest
+
+
+# ##Let's move on to the loop.
+# ##for (k = 0; source[k] != 0; k++) {
+# ##dest[k] = fun(source[k]);
+# ##sum += dest[k];
+# ##}
+
+# ##loop:
+# ###1 slli s3, t0, 2
+# ###2 add t1, s1, s3
+# ###3 lw t2, 0(t1)
+# ###4 beq t2, x0, exit
+# ##...
+# ###5 addi t0, t0, 1
+# ###6 jal x0, loop
+# ##exit:
+
+# loop:
+# slli s3, t0, 2
+# add t1, s1, s3
+# lw t2, 0(t1)
+# beq t2, x0, exit
+
+# #1 add a0, x0, t2 # 1 ...
+# #2 jal fun # 2 ...
+# #3 add t3, s2, s3 # 4
+# #4 sw a0, 0(t3) # 5
+# #5 add s0, s0, a0 # 6
+# addi t0, t0, 1
+# jal x0, loop
+# #exit:
+
+
+# ##Let's add the proper calling convention code around jal fun.
+# addi sp, sp, -4
+# sw t0, 0(sp)
+# jal fun
+# lw t0, 0(sp)
+# addi sp, sp, 4
+
+# ##Next, let's move on to exit (excluding calling convention for the moment).
+# exit:
+# addi a0, x0, 1 # argument to ecall, 1 = execute print integer
+# addi a1, s0, 0 # argument to ecall, the value to be printed
+# ecall # print integer ecall
+# addi a0, x0, 10 # argument to ecall, 10 = terminate program
+# ecall # terminate program
+
+
+# ## you can find the prologue and epilogue for main
+
+# main:
+# # BEGIN PROLOGUE
+# addi sp, sp, -20
+# sw s0, 0(sp)
+# sw s1, 4(sp)
+# sw s2, 8(sp)
+# sw s3, 12(sp)
+# sw ra, 16(sp)
+# # END PROLOGUE
+# #...
+# #...
+# exit:
+# addi a0, x0, 1 # argument to ecall, 1 = execute print integer
+# addi a1, s0, 0 # argument to ecall, the value to be printed
+# ecall # print integer ecall
+# # BEGIN EPILOGUE
+# lw s0, 0(sp)
+# lw s1, 4(sp)
+# lw s2, 8(sp)
+# lw s3, 12(sp)
+# lw ra, 16(sp)
+# addi sp, sp, 20
+# # END EPILOGUE
+# addi a0, x0, 10 # argument to ecall, 10 = terminate program
+# ecall # terminate program
+
+
+##____________________________END________________________________
+
+##__________________Example 3: Printing an array_________________
+
+##_____________  #include <stdio.h>
+##_____________  void printArray(int arr[], int size) {
+##_____________  for (int i = 0; i < size; i++) {
+##_____________  printf("%d\n", arr[i]);
+##_____________  }
+##_____________  }
+##_____________  int main() {
+##_____________  int arr[] = {1, 2, 3, 4, 5};
+##_____________  int size = 5;
+##_____________  printArray(arr, size);
+##_____________  return 0;
+##_____________  }
+
+# .data
+# array: .word 1, 2, 3, 4, 5 # Array elements
+# .text
+# main:
+# la a0, array # Load base address of the array into a0
+# li a1, 5 # loading value 5 ( size of array in a1 register)
+# jal printArray # Call the printArray procedure
+# li a0, 10 # load a value 10 into a0 register to exit the
+# program
+# ecall # Exit program
+# printArray:
+# addi sp, sp, -16 # Allocate space on the stack
+# sw ra, 12(sp) # Save return address
+# sw s0, 8(sp) # Save s0
+# sw s1, 4(sp) # Save s1
+# mv s0, a0 # Save array base address in s0
+# mv s1, a1 # Save size in s1
+# li t0, 0 # Initialize index i = 0
+# print_loop:
+# bge t0, s1, end_loop # If i >= size, exit loop
+# slli t1, t0, 2 # t1 = i * 4 (word size)
+# add t2, s0, t1 # t2 = address of arr[i]
+# lw a1, 0(t2) # Load arr[i] into a1
+# li a0, 1 # Load 1 into a0 to print it
+# ecall # Print arr[i]
+# addi t0, t0, 1 # i++
+# j print_loop # Repeat loop
+# end_loop:
+# lw ra, 12(sp) # Restore return address
+# lw s0, 8(sp) # Restore s0
+# lw s1, 4(sp) # Restore s1
+# addi sp, sp, 16 # Deallocate stack space
+# jr ra # Return to caller
+
+
+##_______________________________END____________________________________
+
+
+
+##_________________________Lab 5 Task 1_________________________________
+##_______________________Sum of an Integer Array____________________
+
+##_________________  Example C code for reference:
+##_________________  int sumArray(int arr[], int size) {
+##_________________  int sum = 0;
+##_________________  for (int i = 0; i < size; i++) {
+##_________________  sum += arr[i];
+##_________________  }
+##_________________  return sum;
+##_________________  }
+
+.data
+array: .word 1,2,3,4,5,6,7,8,9
+
+
+.text
+main: #____________________ caller should follow the calling conventions
+la a0, array # ____________ Load base address of the array into a0
+li a1, 9 # ________________ loading value 9 ( size of array in a1 register)
+li t0 0 #__________________ sum = 0
+jal sum_loop #_____________ Call the sumArray procedure
+program:
+li a0, 10 #________________ exit the program
+ecall # ___________________ Exit program
+
+li t1 0 # _________________ i = 0
+# sw t2 t2 t0 #______________ sum --> t2 
+sum_loop:
+bge t1 a1 sum_end #________ i < size
+slli t1 t0 2
+add t2 t2 t1 #____________ sum += arr[i];
+addi t1 t1 1 #____________ i++
+J sum_loop
+
+
+sum_end:
+j program
+
+##___________________________END TASK 1__________________________________
+
